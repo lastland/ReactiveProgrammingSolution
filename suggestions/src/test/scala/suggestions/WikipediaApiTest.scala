@@ -3,6 +3,7 @@ package suggestions
 
 
 import language.postfixOps
+import scala.collection._
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -34,7 +35,7 @@ class WikipediaApiTest extends FunSuite {
   import mockApi._
 
   test("WikipediaApi should make the stream valid using sanitized") {
-    val notvalid = Observable.just("erik", "erik meijer", "martin")
+    val notvalid = Observable.just("erik", "erik meijer", "martin", "a b c")
     val valid = notvalid.sanitized
 
     var count = 0
@@ -48,7 +49,35 @@ class WikipediaApiTest extends FunSuite {
       t => assert(false, s"stream error $t"),
       () => completed = true
     )
-    assert(completed && count == 3, "completed: " + completed + ", event count: " + count)
+    assert(completed && count == 4, "completed: " + completed + ", event count: " + count)
+  }
+  test("WikipediaApi should recover exceptions") {
+    val ex = new RuntimeException
+    val ob = Observable.just(1, 2, 3, 4) map { elt =>
+      if (3 == elt) throw ex
+      elt
+    }
+    val recovered = ob.recovered
+
+    val result = mutable.Buffer[Try[Int]]()
+    val sub = recovered subscribe {
+      result += _
+    }
+    assert(result == Seq(Success(1), Success(2), Failure(ex)))
+  }
+  test("WikipediaApi should timeout") {
+    val ex = new RuntimeException
+    val ob = Observable.just(1, 2, 3, 4) map { elt =>
+      Thread.sleep(1000)
+      elt
+    }
+    val recovered = ob.timedOut(2)
+
+    val result = mutable.Buffer[Int]()
+    val sub = recovered subscribe {
+      result += _
+    }
+    assert(result.length <= 2)
   }
   test("WikipediaApi should correctly use concatRecovered") {
     val requests = Observable.just(1, 2, 3)
